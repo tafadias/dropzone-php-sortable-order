@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dropzone Completo</title>
+
+    <!-- CSS Dropzone -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/dropzone/4.2.0/dropzone.css">
+
+    <style type="text/css">
+        #my-dropzone{
+                border: dashed #3c8dbc 3px;
+                min-height: 218px;
+        }
+        #my-dropzone .dz-message {
+            text-align: center;
+            margin: 2em 0;
+            font-size: 29px;
+            color: #3C8DBC;
+        }
+    </style>
+
+  </head>
+  <body>
+    <h1>Dropzone</h1>
+
+    <div class="dropzone" id="my-dropzone"></div>
+
+    <!-- Usar HIDDEN em produção -->
+    <textarea name="imagens" style="width:100%;height:150px;margin-top:30px;background-color:#ECECEC;"></textarea>
+
+    <p>Por segurança é bom rodar função atualizaCampoImagens() antes de enviar o formulario</p>
+
+    <!--Jquery -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <!--Jquery UI para ordenação -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.11.4/jquery-ui.min.js"></script>
+    <!--Dropzone -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dropzone/4.2.0/dropzone.js"></script>
+
+    <script>
+        var carregados = [];
+
+        function atualizaCampoImagens() {
+                var strImagens = '{["imagens":';
+
+                $.each(carregados, function( kCarregados, vCarregados ) {
+                        strImagens +=  '{ "imagem":' + vCarregados['arquivoServidor'] + ', "ordem":' + vCarregados['ordem'] + ' },';
+                });
+
+                strImagens = strImagens.replace(/,+$/,'');
+                strImagens += ']}';
+
+                $('textarea[name="imagens"]').val(strImagens);
+        }
+
+        function atualizaOrdemImagens() {
+                var aux = 0;
+                var order = [];
+                var oldCarregados = carregados;
+                carregados = []; // resetamos para atualizar no momento do delete
+
+                $('#my-dropzone .dz-image img').each(
+                    function(index){
+                        order[aux] =  $(this).attr('alt');
+                        aux++;
+                    }
+                );
+
+                var strImagens = '{["imagens":';
+
+                /**
+                 * Buscamos o novo nome do arquivo servidor para cada um no DZ
+                 */
+                $.each(order, function( kOrder, vOrder ) {
+                    $.each(oldCarregados, function( kCarregados, vCarregados ) {
+                        if(vCarregados['arquivoCliente'] == vOrder){
+                            var img = [];
+                            img['arquivoCliente'] = vCarregados['arquivoCliente'];
+                            img['arquivoServidor'] = vCarregados['arquivoServidor'];
+                            img['ordem'] = kOrder;
+                            carregados.push(img);
+
+                            strImagens +=  '{ "imagem":' + vCarregados['arquivoServidor'] + ', "ordem":' + kOrder + ' },';
+                        }
+                    });
+                });
+
+                strImagens = strImagens.replace(/,+$/,'');
+                strImagens += ']}';
+
+                $('textarea[name="imagens"]').val(strImagens);
+
+        }
+
+
+        // "myAwesomeDropzone" is the camelized version of the HTML element's ID
+        Dropzone.options.myDropzone = {
+            url: 'php/adiciona-imagem.php',
+            paramName: "file", // The name that will be used to transfer the file
+            maxFilesize: 2, // MB
+            dictDefaultMessage: 'Arraste seus arquivos ou clique aqui.',
+            dictInvalidFileType: 'Tipo de arquivo inválido.',
+            dictFileTooBig: 'Tamanho maximo 2MB.',
+            dictRemoveFile: 'Remover',
+            acceptedFiles: 'image/*',
+            addRemoveLinks: true,
+            //uploadMultiple: true, // Nosso PHP processa um por vez
+            init: function() {
+
+                this.on("addedfile", function(file) {
+
+                });
+
+                this.on('removedfile', function(file) {
+                    $.ajax({
+                        type: 'POST',
+                        url: 'php/deleta-imagem.php',
+                        data: "imagem=" + file.name,
+                        dataType: 'json'
+                    })
+
+                    atualizaOrdemImagens();
+                });
+
+                this.on('complete', function(file, retorno) {
+                    if (this.getUploadingFiles().length === 0 && this.getQueuedFiles().length === 0) {
+                        atualizaCampoImagens();
+                    }
+                });
+
+
+                this.on('success', function(file, retorno) {
+                    var img = [];
+                    img['arquivoCliente'] = retorno.arquivoCliente;
+                    img['arquivoServidor'] = retorno.arquivoServidor;
+                    img['ordem'] = carregados.length;
+
+                    carregados.push(img);
+                });
+
+                var thisDropzone = this;
+
+                $.get('php/busca-imagens.php', function(data) {
+                    $.each(data, function(key,value){
+                        // Create the mock file:
+                        var mockFile = { name: value.arquivoServidor, size: value.tamanho };
+
+                        // Call the default addedfile event handler
+                        thisDropzone.emit("addedfile", mockFile)    ;
+                        // And optionally show the thumbnail of the file:
+                        thisDropzone.emit("thumbnail", mockFile, value.url);
+                        // Or if the file on your server is not yet in the right
+                        // size, you can let Dropzone download and resize it
+                        // callback and crossOrigin are optional.
+                        // myDropzone.createThumbnailFromUrl(file, imageUrl, callback, crossOrigin);
+                        thisDropzone.createThumbnailFromUrl(mockFile, value.url);
+
+                        thisDropzone.emit("complete", mockFile, value);
+                        // Make sure that there is no progress bar, etc...
+                        thisDropzone.emit("success", mockFile, value);
+                    });
+                }).done(function(){
+                    atualizaCampoImagens();
+                });
+			},
+        };
+
+        $(function () {
+            $("#my-dropzone").sortable({
+                items:'.dz-preview',
+                cursor: 'move',
+                opacity: 0.5,
+                containment: '#my-dropzone',
+                distance: 20,
+                tolerance: 'pointer',
+                stop: function(event, ui) {
+                    atualizaOrdemImagens();
+                }
+            });
+        })
+
+    </script>
+  </body>
+</html>
